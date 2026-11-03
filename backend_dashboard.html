@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NEET PG · Official Data Monitor</title>
+<style>
+:root{color-scheme:dark;--bg:#08101e;--card:#121f34;--line:#2b3d5c;--muted:#a6b5d0;--text:#f1f5ff;--accent:#72e3ff}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top right,#18274b,var(--bg) 50%);color:var(--text);font:14px/1.5 system-ui,Segoe UI,sans-serif}
+main{max-width:1100px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap}.muted{color:var(--muted)}h1{font-size:25px;margin:0}h2{font-size:17px;margin:0 0 12px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-top:16px}.card{background:rgba(18,31,52,.88);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 12px 35px #0003}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.field{display:flex;flex-direction:column;gap:5px;flex:1;min-width:210px}label{font-size:12px;color:var(--muted)}input{background:#091426;color:var(--text);border:1px solid var(--line);padding:10px;border-radius:9px;width:100%}button{background:#183450;color:white;border:1px solid #37617c;padding:10px 13px;border-radius:9px;font-weight:700;cursor:pointer}button.primary{background:#13546a;border-color:#4bbbd6}.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.metric{padding:12px;background:#0a1527;border-radius:10px}.num{font-size:22px;font-weight:800}.tag{display:inline-block;padding:3px 8px;border-radius:999px;background:#263651;font-size:11px}.ok{color:#7ce4b1}.warn{color:#ffd18a}.bad{color:#ff9caa}.item{padding:12px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.item:last-child{border-bottom:0}a{color:var(--accent)}.small{font-size:12px}.error{color:#ff9caa;white-space:pre-wrap}#log{white-space:pre-wrap;overflow-wrap:anywhere}.hidden{display:none}
+</style></head>
+<body><main>
+<div class="top"><div><h1>NEET PG Official Data Monitor</h1><div class="muted">MCC + Maharashtra CET Cell · server-side five-minute checks</div></div><span class="tag" id="state">Not connected</span></div>
+<div class="card" style="margin-top:16px">
+<h2>Connect to your deployed backend</h2>
+<div class="row">
+<div class="field"><label>Backend base URL</label><input id="base" placeholder="https://your-api.example.com"></div>
+<div class="field"><label>Admin API key (only for manual check)</label><input id="key" type="password" placeholder="Enter admin key"></div>
+</div>
+<div class="row" style="margin-top:12px"><button class="primary" id="connect">Connect / refresh</button><button id="run">Run check now</button><button id="forget">Clear saved settings</button></div>
+<p class="muted small">The API key is kept in this tab's session storage only. Do not host this admin dashboard publicly with a shared key. Public status endpoints do not need the key; manual check does.</p>
+<div id="error" class="error"></div>
+</div>
+<div class="grid">
+<section class="card"><h2>Scheduler status</h2><div class="metrics">
+<div class="metric"><div class="muted small">Scheduler</div><div class="num" id="sched">—</div></div>
+<div class="metric"><div class="muted small">Interval</div><div class="num" id="interval">—</div></div>
+<div class="metric"><div class="muted small">Last run</div><div class="small" id="last">—</div></div>
+</div></section>
+<section class="card"><h2>Latest cycle</h2><div id="runSummary" class="muted">Connect to view the latest run.</div></section>
+</div>
+<div class="grid">
+<section class="card"><h2>Official sources</h2><div id="sources" class="muted">No source data loaded.</div></section>
+<section class="card"><h2>Recent documents / review queue</h2><div id="documents" class="muted">No document data loaded.</div></section>
+</div>
+<section class="card" style="margin-top:14px"><h2>Manual check response</h2><div id="log" class="muted small">No manual check run in this session.</div></section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function base(){return $("base").value.trim().replace(/\/+$/,"");}
+async function api(path,opts={}){const u=base()+path;if(!base())throw Error("Enter the backend base URL first.");const headers={...(opts.headers||{})};if(opts.admin)headers["X-Admin-Api-Key"]=$("key").value.trim();const r=await fetch(u,{...opts,headers});const txt=await r.text();let j;try{j=JSON.parse(txt)}catch{j={detail:txt}}if(!r.ok)throw Error((j.detail||r.statusText)+" (HTTP "+r.status+")");return j;}
+function stamp(s){if(!s)return "—";try{return new Date(s).toLocaleString()}catch{return s}}
+async function connect(){
+ $("error").textContent="";$("state").textContent="Connecting…";
+ try{
+  const [h,s,d,r]=await Promise.all([api("/api/health"),api("/api/sources"),api("/api/documents?limit=30"),api("/api/runs?limit=1")]);
+  $("state").textContent="Connected";$("state").className="tag ok";
+  $("sched").textContent=h.scheduler_running?"RUNNING":"STOPPED";$("sched").className="num "+(h.scheduler_running?"ok":"bad");
+  $("interval").textContent=(h.interval_minutes||"—")+" min";$("last").textContent=stamp(h.last_run?.finished_at||h.last_run?.started_at);
+  $("runSummary").innerHTML=h.last_run?`<b>${esc(h.last_run.status)}</b><p class="small">New documents: ${esc(h.last_run.new_documents)} · Changed URLs: ${esc(h.last_run.changed_documents)} · Errors: ${esc(h.last_run.errors)}</p><p class="small muted">${esc(h.last_run.detail||"")}</p>`:"No scheduled cycle has completed yet.";
+  $("sources").innerHTML=s.sources.map(x=>`<div class="item"><b>${esc(x.name)}</b> <span class="tag">${esc(x.last_check?.status||"never checked")}</span><div class="small muted">Last checked: ${esc(stamp(x.last_check?.checked_at))}</div><div class="small"><a href="${esc(x.url)}" target="_blank" rel="noopener">Open official source</a></div><div class="small muted">${esc(x.last_check?.detail||"No check yet.")}</div></div>`).join("");
+  $("documents").innerHTML=d.documents.length?d.documents.map(x=>`<div class="item"><b>${esc(x.title)}</b><div><span class="tag">${esc(x.counselling_system)}</span> <span class="tag">${esc(x.parser_status)}</span> <span class="tag">${esc(x.review_status)}</span></div><div class="small muted">Seen: ${esc(stamp(x.last_seen_at))} · Extracted chars: ${esc(x.extracted_chars)}</div><div class="small"><a href="${esc(x.document_url)}" target="_blank" rel="noopener">Source document</a> · SHA-256: ${esc((x.sha256||"").slice(0,16))}…</div></div>`).join(""):"No documents discovered yet.";
+ }catch(e){$("state").textContent="Connection failed";$("state").className="tag bad";$("error").textContent=e.message;}
+}
+async function runNow(){ $("error").textContent="";$("log").textContent="Running check…";try{const r=await api("/api/run-now",{method:"POST",admin:true});$("log").textContent=JSON.stringify(r,null,2);await connect();}catch(e){$("error").textContent=e.message;$("log").textContent="Manual check failed.";}}
+$("connect").onclick=connect;$("run").onclick=runNow;
+$("forget").onclick=()=>{sessionStorage.removeItem("neetpg_api_base");sessionStorage.removeItem("neetpg_api_key");$("base").value="";$("key").value="";$("state").textContent="Not connected";};
+$("base").value=sessionStorage.getItem("neetpg_api_base")||"";$("key").value=sessionStorage.getItem("neetpg_api_key")||"";
+$("base").addEventListener("change",()=>sessionStorage.setItem("neetpg_api_base",base()));
+$("key").addEventListener("change",()=>sessionStorage.setItem("neetpg_api_key",$("key").value));
+if($("base").value)connect();
+</script></body></html>

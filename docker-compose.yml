@@ -1,0 +1,17 @@
+services:
+  neetpg-updater:
+    build: .
+    container_name: neetpg-official-updater
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      UPDATE_INTERVAL_MINUTES: "5"
+      ADMIN_API_KEY: "${ADMIN_API_KEY:?Set ADMIN_API_KEY in .env}"
+      DATABASE_PATH: "/app/data/neet_pg_updates.sqlite3"
+      DATA_DIR: "/app/data"
+      FETCH_TIMEOUT_SECONDS: "25"
+      MAX_DOCUMENT_MB: "80"
+      CORS_ORIGINS: "*"
+    volumes:
+      - ./data:/app/data
